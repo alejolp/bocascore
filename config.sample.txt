@@ -1,10 +1,19 @@
+[config]
+output_file_prefix = salida
+
 [localhost]
 type = boca
 name = Local
 url = http://localhost:8080/boca
 user = score
 pass = score
-enabled = 0
+enabled = 1
+
+[localhost]
+type = json
+name = JSON TEST
+url = http://localhost:8081/coso.json.gz
+enabled = 1
 
 [rpc201509]
 type = boca

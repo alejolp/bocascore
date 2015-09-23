@@ -9,6 +9,9 @@ import cookielib
 import hashlib
 import pprint
 import string
+import json
+import gzip
+import StringIO
 import ConfigParser
 
 from bs4 import BeautifulSoup
@@ -117,13 +120,44 @@ class BocaScoreboard:
 
         return L
 
-def load_boards(filename):
-    cfg = ConfigParser.SafeConfigParser()
-    cfg.read(filename)
+class JsonScoreboard:
+    def __init__(self, base_url, name):
+        self.base_url = base_url
+        self.name = name
+        self.cj = None
+        self.opener = None
+        self.loginok = False
+
+    def login(self):
+        self.cj = cookielib.CookieJar()
+        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cj))
+        self.opener.addheaders = [('User-Agent', HTTP_USER_AGENT)]
+        self.loginok = True
+
+    def get_scoreboard(self):
+        if not self.loginok:
+            self.login()
+
+        resp = self.opener.open(self.base_url)
+        resptext = resp.read()
+
+        try:
+            return json.loads(resptext)
+        except ValueError:
+            pass
+            
+        str_file_handle = StringIO.StringIO( resptext )
+        gzip_file_handle = gzip.GzipFile(fileobj=str_file_handle)
+        return json.loads(gzip_file_handle.read())
+
+def load_boards(cfg):
 
     boards = []
 
     for sec in cfg.sections():
+        if sec in ['config']:
+            continue
+
         boardtype = cfg.get(sec, 'type')
 
         if cfg.get(sec, 'enabled') != '1':
@@ -131,6 +165,8 @@ def load_boards(filename):
 
         if boardtype == 'boca':
             B = BocaScoreboard(cfg.get(sec, 'url'), cfg.get(sec, 'user'), cfg.get(sec, 'pass'), cfg.get(sec, 'name'))
+        elif boardtype == 'json':
+            B = JsonScoreboard(cfg.get(sec, 'url'), cfg.get(sec, 'name'))
         else:
             raise Exception("unknown board type " + board + " in section " + sec)
 
@@ -163,25 +199,15 @@ def unify_scoreboards(scores):
     for board, s in scores:
         for t in s:
             t2 = dict([(k, t.get(k, u'')) for k in allkeys])
-            t2[u'Site Name'] = unicode(board.name)
+            if u'Site Name' not in t2:
+                t2[u'Site Name'] = unicode(board.name)
             allteams.append(t2)
 
     allteams.sort(key=team_points_key, reverse=True)
 
     return allteams
 
-def main():
-    filename_config = sys.argv[1]
-    filename_output = sys.argv[2]
-
-    boards = load_boards(filename_config)
-
-    scores = [(b, b.get_scoreboard()) for b in boards]
-
-    unified = unify_scoreboards( scores )
-
-    # pprint.pprint( unified )
-
+def output_html(filename_output, unified):
     with open(filename_output, 'w') as f:
         f.write("""
 <!DOCTYPE html>
@@ -214,6 +240,44 @@ def main():
                     f.write("<td>" + team[k].encode('utf8') + "</td>")
                 f.write("</tr>")
         f.write("""  </table></body></hmtl>""")
+
+def output_json(filename_output, unified, compress):
+    data = json.dumps(unified, sort_keys=True, indent=1)
+
+    if compress:
+        f = gzip.open(filename_output, 'wb')
+        f.write(data)
+        f.close()
+    else:
+        f = open(filename_output, 'w')
+        f.write(data)
+        f.close()
+
+def main():
+    filename_config = sys.argv[1]
+
+    cfg = ConfigParser.SafeConfigParser()
+    cfg.read(filename_config)
+
+    boards = load_boards(cfg)
+
+    scores = []
+
+    for b in boards:
+        try:
+            scores.append((b, b.get_scoreboard()))
+        except Exception, e:
+            print e
+
+    unified = unify_scoreboards( scores )
+
+    # pprint.pprint( unified )
+
+    output_file_prefix = cfg.get('config', 'output_file_prefix')
+
+    output_html(output_file_prefix + '.html', unified)
+    output_json(output_file_prefix + '.json', unified, False)
+    output_json(output_file_prefix + '.json.gz', unified, True)
 
 if __name__ == '__main__':
     main()
