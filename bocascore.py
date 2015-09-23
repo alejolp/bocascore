@@ -13,6 +13,10 @@ import ConfigParser
 
 from bs4 import BeautifulSoup
 
+ASCII_UPPERCASE = set(string.ascii_uppercase)
+
+HTTP_USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1'
+
 def fix_malformed_row(S):
     # BOCA HTML is malformed. The first TD is never closed, and BeautifulSoup breaks
     """
@@ -42,10 +46,11 @@ def fix_malformed_row(S):
     return S
 
 class BocaScoreboard:
-    def __init__(self, base_url, username, password):
+    def __init__(self, base_url, username, password, name):
         self.base_url = base_url
         self.username = username
         self.password = password
+        self.name = name
         self.cj = None
         self.opener = None
         self.loginok = False
@@ -53,7 +58,7 @@ class BocaScoreboard:
     def login(self):
         self.cj = cookielib.CookieJar()
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cj))
-        self.opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1')]
+        self.opener.addheaders = [('User-Agent', HTTP_USER_AGENT)]
         self.loginok = False
 
         # First, get the secret login salt
@@ -125,7 +130,7 @@ def load_boards(filename):
             continue
 
         if boardtype == 'boca':
-            B = BocaScoreboard(cfg.get(sec, 'url'), cfg.get(sec, 'user'), cfg.get(sec, 'pass'))
+            B = BocaScoreboard(cfg.get(sec, 'url'), cfg.get(sec, 'user'), cfg.get(sec, 'pass'), cfg.get(sec, 'name'))
         else:
             raise Exception("unknown board type " + board + " in section " + sec)
 
@@ -133,16 +138,82 @@ def load_boards(filename):
 
     return boards
 
+def team_points_key(t):
+    solved = 0
+    penalty = 0
+
+    for k in t:
+        if k.upper() in ASCII_UPPERCASE:
+            ss = t.get(k).split('/')
+            if len(ss) == 2 and ss[0].isdigit() and ss[1].isdigit():
+                solved  += 1
+                penalty += int(ss[1])
+
+    return (solved, -penalty)
+
+def unify_scoreboards(scores):
+    allkeys = set()
+
+    for board, s in scores:
+        for t in s:
+            allkeys = allkeys.union(t.keys())
+
+    allteams = []
+
+    for board, s in scores:
+        for t in s:
+            t2 = dict([(k, t.get(k, u'')) for k in allkeys])
+            t2[u'Site Name'] = unicode(board.name)
+            allteams.append(t2)
+
+    allteams.sort(key=team_points_key, reverse=True)
+
+    return allteams
+
 def main():
-    if len(sys.argv) > 1:
-        filename = sys.argv[1]
-    else:
-        filename = "config.txt"
+    filename_config = sys.argv[1]
+    filename_output = sys.argv[2]
 
-    boards = load_boards(filename)
+    boards = load_boards(filename_config)
 
-    scores = [b.get_scoreboard() for b in boards]
+    scores = [(b, b.get_scoreboard()) for b in boards]
 
+    unified = unify_scoreboards( scores )
+
+    # pprint.pprint( unified )
+
+    with open(filename_output, 'w') as f:
+        f.write("""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Scoreboard Torneo Argentino de Programaci&oacute;n</title>
+</head>
+<body>
+<h1>Scoreboard Torneo Argentino de Programaci&oacute;n</h1>
+  <table>
+""")
+        if len(unified) > 0:
+            keys = sorted(unified[0].keys(), key=(lambda x: len(x)))
+            if '#' in keys:
+                keys.remove('#')
+
+            f.write("<tr>")
+
+            f.write("<th>#</th>")
+
+            for k in keys:
+                f.write("<th>" + k.encode('utf8') + "</th>")
+            f.write("</tr>")
+
+            for i, team in enumerate(unified, 1):
+                f.write("<tr>")
+                f.write("<td>" + str(i) + "</td>")
+                for k in keys:
+                    f.write("<td>" + team[k].encode('utf8') + "</td>")
+                f.write("</tr>")
+        f.write("""  </table></body></hmtl>""")
 
 if __name__ == '__main__':
     main()
