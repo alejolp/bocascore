@@ -1,0 +1,31 @@
+[localhost]
+type = boca
+name = Local
+url = http://localhost:8080/boca
+user = score
+pass = score
+enabled = 0
+
+[rpc201509]
+type = boca
+name = RPC 2015 09
+url = https://acm.javeriana.edu.co/maratones/2015/09
+user = board
+pass = 
+enabled = 1
+
+[rpc201508]
+type = boca
+name = RPC 2015 08
+url = https://acm.javeriana.edu.co/maratones/2015/08
+user = board
+pass = 
+enabled = 1
+
+[rpc201507]
+type = boca
+name = RPC 2015 07
+url = https://acm.javeriana.edu.co/maratones/2015/07
+user = board
+pass = 
+enabled = 1
